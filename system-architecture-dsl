@@ -1,0 +1,212 @@
+/*
+ * This is a combined version of the following workspaces:
+ *
+ * - "Big Bank plc - System Landscape" (https://structurizr.com/share/28201/)
+ * - "Big Bank plc - Internet Banking System" (https://structurizr.com/share/36141/)
+*/
+workspace "Payreflect" "DSL describing software architecture for Payreflect" {
+
+    model {
+        customer = person "Customer" "A person trying to perform a checkout." "Customer"
+        merchant = person "Merchant" "The party that integrated Payreflect into their system" "Merchant"
+
+        enterprise "Payreflect" {
+            supportStaff = person "Customer Service Staff" "Customer service for PayReflect." "Employee"
+
+            coreSystem = softwaresystem "System" "Stores all of the core information about merchants, accounts, transactions, etc." "Existing System"
+            email = softwaresystem "E-mail System" "The external 3rd party vendor-based e-mail system." "Existing System"
+
+            checkoutSystem = softwaresystem "Checkout System" "Allows customers choose options and make payments." {
+                merchantApplication = container "Merchant Application" "Provides services to customers through their web browser." "JavaScript and React" "Web Browser"
+                webDashboard = container "Web Dashboard" "Delivers the static content and the management screens as a single page application." "Javascript and React"
+                apiApplication = container "API Application" "Provides management functionality via a JSON/HTTPS API." "Node.js and Nestjs MVC" {
+                    authController = component "Auth Controller" "Allows users to sign in to the Internet Banking System." "Nestjs MVC Rest Controller"
+                    resetPasswordController = component "Reset Password Controller" "Allows users to reset their passwords with a single use URL." "Nestjs MVC Rest Controller"
+                    authComponent = component "Auth Component" "Provides functionality related to signing in, changing passwords, etc." "Nestjs module"
+                    emailComponent = component "E-mail Component" "Sends e-mails to users." "Nestjs"
+                }
+                database = container "Database" "Stores user registration information, hashed authentication credentials, keys, etc." "Mongodb" "Database"
+            }
+        }
+
+        # relationships between people and software systems
+        customer -> checkoutSystem "Makes payments through"
+        merchant -> coreSystem "Defines choices for customers and credentials through"
+        checkoutSystem -> coreSystem "Gets vendor information from, and makes payments using"
+        coreSystem -> email "Sends e-mail using"
+        email -> customer "Sends e-mails to"
+        customer -> supportStaff "Asks questions to" "Telephone"
+        supportStaff -> coreSystem "Uses"
+
+        # relationships to/from containers
+        customer -> checkoutSystem "Visits checkout.payreflect.com using" "HTTPS"
+        merchant -> webDashboard "Visits payreflect.com/dashboard using" "HTTPS"
+        customer -> merchantApplication "Interacts with consumer services using"
+
+        # relationships to/from components
+        webDashboard -> authController "Makes API calls to" "JSON/HTTPS"
+        authController -> authComponent "Uses"
+        resetPasswordController -> authComponent "Uses"
+        resetPasswordController -> emailComponent "Uses"
+        authComponent -> database "Reads from and writes to" "Sequelize"
+        emailComponent -> email "Sends e-mail using"
+
+        deploymentEnvironment "Development" {
+            deploymentNode "Developer Laptop" "" "Apple macOS" {
+                deploymentNode "Web Browser" "" "Chrome, Firefox, Safari, or Edge" {
+                    developerWebDashboardInstance = containerInstance webDashboard
+                }
+                deploymentNode "Docker Container - Database Server" "" "Docker" {
+                    deploymentNode "Database Server" "" "Mongodb" {
+                        developerDatabaseInstance = containerInstance database
+                    }
+                    deploymentNode "Node" "" "Node 12.x" {
+                        developerApiApplicationInstance = containerInstance apiApplication
+                    }
+
+                }
+                
+                deploymentNode "Core System" "" "Digital Ocean" "" {
+                    deploymentNode "core-system-dev" "" "" "" {
+                        softwareSystemInstance coreSystem
+                    }
+                }
+
+            }
+
+        }
+
+        deploymentEnvironment "Live" {
+            deploymentNode "Customer's browser" "" "Microsoft Windows, Apple macOS, AndroidOS, Apple iOS" {
+                deploymentNode "Web Browser" "" "Chrome, Firefox, Safari, or Edge" {
+                    liveWebApplicationInstance = containerInstance webDashboard
+                }
+            }
+
+            deploymentNode "Core System" "" "Digital Ocean data center" {
+                deploymentNode "payreflect-web***" "" "Ubuntu 20.04 LTS" "" 4 {
+                    deploymentNode "Nginx" "" "Nginx 8.x" {
+                        liveWebDashboardInstance = containerInstance webDashboard
+                    }
+                }
+                deploymentNode "payreflect-api***" "" "Ubuntu 16.04 LTS" "" 8 {
+                    deploymentNode "Nginx" "" "Nginx 8.x" {
+                        liveApiApplicationInstance = containerInstance apiApplication
+                    }
+                }
+
+                deploymentNode "payreflect-db" "" "Ubuntu 18.04 LTS" {
+                    primaryDatabaseServer = deploymentNode "Mongodb - Primary" "" "Mongodb" {
+                        livePrimaryDatabaseInstance = containerInstance database
+                    }
+                }
+            }
+        }
+    }
+
+    views {
+        systemlandscape "SystemLandscape" {
+            include *
+            autoLayout
+        }
+
+        systemcontext checkoutSystem "SystemContext" {
+            include *
+            animation {
+                coreSystem
+                customer
+                merchant
+                email
+            }
+            autoLayout
+        }
+
+        container checkoutSystem "Containers" {
+            include *
+            animation {
+                customer merchant email
+                webDashboard
+                apiApplication
+                database
+            }
+            autoLayout
+        }
+
+        component apiApplication "Components" {
+            include *
+            animation {
+                webDashboard database email
+                authController authComponent
+                resetPasswordController emailComponent
+            }
+            autoLayout
+        }
+
+        dynamic apiApplication "Auth" "Summarises how the auth feature works in the web dashboard application." {
+            webDashboard -> authController "Submits credentials to"
+            authController -> authComponent "Validates credentials using"
+            authComponent -> database "select * from users where username = ?"
+            database -> authComponent "Returns user data to"
+            authComponent -> authController "Returns true if the hashed password matches"
+            authController -> webDashboard "Sends back an authentication token to"
+            autoLayout
+        }
+
+        deployment checkoutSystem "Development" "DevelopmentDeployment" {
+            include *
+            animation {
+                developerWebDashboardInstance developerApiApplicationInstance 
+                developerDatabaseInstance
+            }
+            autoLayout
+        }
+
+        deployment checkoutSystem "Live" "LiveDeployment" {
+            include *
+            animation {
+                liveWebDashboardInstance liveApiApplicationInstance
+                livePrimaryDatabaseInstance
+            }
+            autoLayout
+        }
+
+        styles {
+            element "Person" {
+                color #ffffff
+                fontSize 22
+                shape Person
+            }
+            element "Merchant" {
+                background #06D6A0
+            }
+            element "Customer" {
+                background #00B4D8
+            }
+            element "Software System" {
+                background #0077B6
+                color #ffffff
+            }
+            element "Existing System" {
+                background #999999
+                color #ffffff
+            }
+            element "Container" {
+                background #001B2E
+                color #ffffff
+            }
+            element "Web Browser" {
+                shape WebBrowser
+            }
+            element "Database" {
+                shape Cylinder
+            }
+            element "Component" {
+                background #85bbf0
+                color #000000
+            }
+            element "Failover" {
+                opacity 25
+            }
+        }
+    }
+}
